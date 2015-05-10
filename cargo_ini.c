@@ -315,7 +315,7 @@ int main(int argc, char **argv)
 	ret |= cargo_add_group(cargo, 0, "vals", "Values", "Some options to test with.");
 	ret |= cargo_add_option(cargo, 0, "<vals> --alpha -a", "Alpha", "i", &args.a);
 	ret |= cargo_add_option(cargo, 0, "<vals> --beta -b", "Beta", "i", &args.b);
-	ret |= cargo_add_option(cargo, 0, "<vals> --centauri -c", "Centauri", "i", &args.c);
+	ret |= cargo_add_option(cargo, 0, "<vals> --centauri", "Centauri", "i", &args.c);
 	ret |= cargo_add_option(cargo, 0, "<vals> --delta -d", "Delta", "i", &args.d);
 
 	assert(ret == 0);
