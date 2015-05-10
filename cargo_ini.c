@@ -224,7 +224,7 @@ static int parse_config(cargo_t cargo, args_t *args)
 {
 	cargo_parse_result_t err = 0;
 
-	// Parse the init file and store contents in a hash table.
+	// Parse the ini-file and store contents in a hash table.
 	if (perform_config_parse(cargo, args))
 	{
 		return -1;
@@ -297,6 +297,10 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+	cargo_set_description(cargo,
+		"Specify a configuration file, and try overriding the values set "
+		"in it using the command line options.");
+
 	// Combine flags using OR.
 	ret |= cargo_add_option(cargo, 0,
 			"--verbose -v", "Verbosity level",
@@ -306,10 +310,12 @@ int main(int argc, char **argv)
 			"--config -c", "Path to config file",
 			"s", &args.config_path);
 
-	ret |= cargo_add_option(cargo, 0, "--alpha -a", "Alpha", "i", &args.a);
-	ret |= cargo_add_option(cargo, 0, "--beta -b", "Beta", "i", &args.b);
-	ret |= cargo_add_option(cargo, 0, "--centauri -c", "Centauri", "i", &args.c);
-	ret |= cargo_add_option(cargo, 0, "--delta -d", "Delta", "i", &args.d);
+	ret |= cargo_add_group(cargo, 0, "vals",
+                    "Values", "Some options to test with.");
+	ret |= cargo_add_option(cargo, 0, "<vals> --alpha -a", "Alpha", "i", &args.a);
+	ret |= cargo_add_option(cargo, 0, "<vals> --beta -b", "Beta", "i", &args.b);
+	ret |= cargo_add_option(cargo, 0, "<vals> --centauri -c", "Centauri", "i", &args.c);
+	ret |= cargo_add_option(cargo, 0, "<vals> --delta -d", "Delta", "i", &args.d);
 
 	assert(ret == 0);
 
@@ -319,6 +325,7 @@ int main(int argc, char **argv)
 		goto fail;
 	}
 
+	// Read ini file and translate that into an argv that cargo can parse.
 	printf("Config path: %s\n", args.config_path);
 	if (args.config_path && parse_config(cargo, &args))
 	{
