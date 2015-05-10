@@ -123,6 +123,8 @@ void args_destroy(args_t *args)
 
 		free(it);
 	}
+
+	cargo_free_commandline(&args->config_argv, args->config_argc);
 }
 
 void print_hash(conf_arg_t *config_args)
@@ -310,8 +312,7 @@ int main(int argc, char **argv)
 			"--config -c", "Path to config file",
 			"s", &args.config_path);
 
-	ret |= cargo_add_group(cargo, 0, "vals",
-                    "Values", "Some options to test with.");
+	ret |= cargo_add_group(cargo, 0, "vals", "Values", "Some options to test with.");
 	ret |= cargo_add_option(cargo, 0, "<vals> --alpha -a", "Alpha", "i", &args.a);
 	ret |= cargo_add_option(cargo, 0, "<vals> --beta -b", "Beta", "i", &args.b);
 	ret |= cargo_add_option(cargo, 0, "<vals> --centauri -c", "Centauri", "i", &args.c);
