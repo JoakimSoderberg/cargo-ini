@@ -44,8 +44,16 @@ typedef enum debug_level_e
 typedef struct conf_arg_s
 {
 	char key[MAX_CONFIG_KEY];
+	size_t key_count; // Number of occurances of this key.
+
+	char expanded_key[MAX_CONFIG_KEY];
+	cargo_type_t type;
+
 	char *vals[MAX_CONFIG_VAL];
-	size_t val_count;
+	size_t val_count; // Value count for key.
+
+	size_t args_count; // Final count of arguments to generate for key
+					  // (different for booleans).
 	UT_hash_handle hh;
 } conf_arg_t;
 
@@ -79,9 +87,9 @@ static void alini_cb(alini_parser_t *parser,
 	// Either find an existing config argument with this key.
 	HASH_FIND_STR(args->config_args, key, it);
 
-	// Or add a new config argument.
 	if (!it)
 	{
+		// Or add a new config argument.
 		if (!(it = calloc(1, sizeof(conf_arg_t))))
 		{
 			fprintf(stderr, "Out of memory\n");
@@ -92,6 +100,8 @@ static void alini_cb(alini_parser_t *parser,
 		HASH_ADD_STR(args->config_args, key, it);
 	}
 
+	it->key_count++;
+	
 	if (!(it->vals[it->val_count++] = strdup(value)))
 	{
 		fprintf(stderr, "Out of memory\n");
@@ -162,19 +172,73 @@ void print_commandline(args_t *args)
 	printf("\n");
 }
 
-void build_config_commandline(args_t *args)
+cargo_type_t guess_expanded_name(cargo_t cargo, conf_arg_t *it,
+								 char *tmpkey, size_t tmpkey_len)
+{
+	cargo_type_t type;
+	int i = 1;
+
+	// TODO: Maybe cargo should simply have a function that gets this
+	// Hack to figure out what prefix to use, "-", "--", and so on...
+	do
+	{
+		snprintf(tmpkey, tmpkey_len, "%*.*s%s", i, i, "------", it->key);
+		type = cargo_get_option_type(cargo, tmpkey);
+		i++;
+	}
+	while (((int)type == -1) && (i < CARGO_NAME_COUNT));
+
+	return (i < CARGO_NAME_COUNT) ? type : -1;
+}
+
+int build_config_commandline(cargo_t cargo, args_t *args)
 {
 	size_t j = 0;
 	int i = 0;
 	conf_arg_t *it = NULL;
 	conf_arg_t *tmp = NULL;
 	char tmpkey[1024];
+	cargo_type_t type;
 	
 	args->config_argc = 0;
 
 	HASH_ITER(hh, args->config_args, it, tmp)
 	{
-		args->config_argc += 1 + it->val_count;
+		// Take a keyname, for instance "delta" and try "-delta", "--delta"
+		// and so on until a match is found in a hackish way...
+		it->type = guess_expanded_name(cargo, it,
+						it->expanded_key, sizeof(it->expanded_key) - 1);
+
+		// Booleans can be repeated so we parse them in the form
+		// key=integer
+		if (it->type == CARGO_BOOL)
+		{
+			if (it->key_count != 1)
+			{
+				fprintf(stderr, "Error, multiple occurances of '%s' found. "
+					"To repeat a flag please use '%s=%lu' instead.\n",
+					it->key, it->key, it->key_count);
+				return -1;
+			}
+
+			// TODO: Get rid of atoi use....
+			if (strlen(it->vals[0]) == 0)
+			{
+				fprintf(stderr, "Error, please supply an integer value to "
+					"the '%s' flag\n", it->key);
+				return -1;
+			}
+			else
+			{
+				it->args_count = atoi(it->vals[0]);
+			}
+		}
+		else
+		{
+			it->args_count = 1 + it->val_count;
+		}
+
+		args->config_argc += it->args_count;
 	}
 
 	if (!(args->config_argv = calloc(args->config_argc, sizeof(char *))))
@@ -185,23 +249,37 @@ void build_config_commandline(args_t *args)
 
 	HASH_ITER(hh, args->config_args, it, tmp)
 	{
-		snprintf(tmpkey, sizeof(tmpkey) - 1, "--%s", it->key);
-	
-		if (!(args->config_argv[i++] = strdup(tmpkey)))
+		if (it->type == CARGO_BOOL)
 		{
-			fprintf(stderr, "Out of memory!\n");
-			exit(-1);
+			for (j = 0; j < it->args_count; j++)
+			{
+				if (!(args->config_argv[i++] = strdup(it->expanded_key)))
+				{
+					fprintf(stderr, "Out of memory!\n");
+					exit(-1);
+				}
+			}
 		}
-
-		for (j = 0; j < it->val_count; j++)
+		else
 		{
-			if (!(args->config_argv[i++] = strdup(it->vals[j])))
+			if (!(args->config_argv[i++] = strdup(tmpkey)))
 			{
 				fprintf(stderr, "Out of memory!\n");
 				exit(-1);
 			}
+
+			for (j = 0; j < it->val_count; j++)
+			{
+				if (!(args->config_argv[i++] = strdup(it->vals[j])))
+				{
+					fprintf(stderr, "Out of memory!\n");
+					exit(-1);
+				}
+			}
 		}
 	}
+
+	return 0;
 }
 
 static int perform_config_parse(cargo_t cargo, args_t *args)
@@ -238,7 +316,10 @@ static int parse_config(cargo_t cargo, args_t *args)
 	//   key2 = 789
 	// Becomes:
 	//   --key1 123 456 --key2 789
-	build_config_commandline(args);
+	if (build_config_commandline(cargo, args))
+	{
+		return -1;
+	}
 
 	if (args->debug)
 	{
@@ -343,6 +424,7 @@ int main(int argc, char **argv)
 	printf("%10s: %d\n", "Beta",		args.b);
 	printf("%10s: %d\n", "Centauri",	args.c);
 	printf("%10s: %d\n", "Delta",		args.d);
+	printf("%10s: 0x%X\n", "Verbosity", args.debug);
 
 fail:
 	cargo_destroy(&cargo);

@@ -3,4 +3,4 @@
 	url = git@github.com:JoakimSoderberg/cargo.git
 [submodule "alini"]
 	path = alini
-	url = git@github.com:ddfreyne/alini.git
+	url = git@github.com:JoakimSoderberg/alini.git
