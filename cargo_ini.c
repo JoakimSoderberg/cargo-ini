@@ -46,24 +46,46 @@ typedef struct conf_arg_s
 	char key[MAX_CONFIG_KEY];
 	size_t key_count; // Number of occurances of this key.
 
+	// In the ini file any prefix characters are omitted so
+	// this will contain those keys with the proper prefix added.
+	// For example: "verbose" -> "--verbose"
 	char expanded_key[MAX_CONFIG_KEY];
 	cargo_type_t type;
 
+	// If a key is specified multiple times we accumulate
+	// all the values here so we can group them in the output.
+	//  mykey=1
+	//  mykey=2
+	//  mykey=3
+	// Becomes:
+	// --mykey 1 2 3
 	char *vals[MAX_CONFIG_VAL];
-	size_t val_count; // Value count for key.
+	size_t val_count;
 
-	size_t args_count; // Final count of arguments to generate for key
-					  // (different for booleans).
+	// Final count of arguments to generate for key
+	// (different for booleans).
+	size_t args_count; 
+	
+	// Hash table used to keep track of duplicate keys.
 	UT_hash_handle hh;
 } conf_arg_t;
 
-typedef struct args_s
+typedef struct conf_ini_args_s
 {
 	alini_parser_t *parser;
+
+	// The final command line that represents the contents of ini file.
 	char **config_argv;
 	int config_argc;
+
+	// Used in the ini parsing stage to store the variables.
 	conf_arg_t *config_args;
 	size_t config_args_count;
+} conf_ini_args_t;
+
+typedef struct args_s
+{
+	conf_ini_args_t ini_args;
 
 	debug_level_t debug;
 	char *config_path;
@@ -77,12 +99,7 @@ static void alini_cb(alini_parser_t *parser,
 					char *section, char *key, char *value)
 {
 	conf_arg_t *it = NULL;
-	args_t *args = (args_t *)alini_parser_get_context(parser);
-
-	if (args->debug)
-	{
-		printf("Alini callback - Key: %s, Val: %s\n", key, value);
-	}
+	conf_ini_args_t *args = (conf_ini_args_t *)alini_parser_get_context(parser);
 
 	// Either find an existing config argument with this key.
 	HASH_FIND_STR(args->config_args, key, it);
@@ -115,7 +132,7 @@ void args_init(args_t *args)
 	memset(args, 0, sizeof(args_t));
 }
 
-void args_destroy(args_t *args)
+void ini_args_destroy(conf_ini_args_t *args)
 {
 	size_t i;
 	conf_arg_t *it = NULL;
@@ -161,7 +178,7 @@ void print_hash(conf_arg_t *config_args)
 	}
 }
 
-void print_commandline(args_t *args)
+void print_commandline(conf_ini_args_t *args)
 {
 	int i;
 	for (i = 0; i < args->config_argc; i++)
@@ -191,7 +208,7 @@ cargo_type_t guess_expanded_name(cargo_t cargo, conf_arg_t *it,
 	return (i < CARGO_NAME_COUNT) ? type : -1;
 }
 
-int build_config_commandline(cargo_t cargo, args_t *args)
+int build_config_commandline(cargo_t cargo, conf_ini_args_t *args)
 {
 	size_t j = 0;
 	int i = 0;
@@ -282,14 +299,15 @@ int build_config_commandline(cargo_t cargo, args_t *args)
 	return 0;
 }
 
-static int perform_config_parse(cargo_t cargo, args_t *args)
+static int perform_config_parse(cargo_t cargo, const char *config_path,
+								conf_ini_args_t *args)
 {
 	int cfg_err = 0;
 
-	if ((cfg_err = alini_parser_create(&args->parser, args->config_path)) < 0)
+	if ((cfg_err = alini_parser_create(&args->parser, config_path)) < 0)
 	{
 		cargo_print_usage(cargo, CARGO_USAGE_SHORT_USAGE);
-		fprintf(stderr, "\nFailed to load config: %s\n", args->config_path);
+		fprintf(stderr, "\nFailed to load config: %s\n", config_path);
 		return -1;
 	}
 
@@ -305,7 +323,7 @@ static int parse_config(cargo_t cargo, args_t *args)
 	cargo_parse_result_t err = 0;
 
 	// Parse the ini-file and store contents in a hash table.
-	if (perform_config_parse(cargo, args))
+	if (perform_config_parse(cargo, args->config_path, &args->ini_args))
 	{
 		return -1;
 	}
@@ -316,22 +334,23 @@ static int parse_config(cargo_t cargo, args_t *args)
 	//   key2 = 789
 	// Becomes:
 	//   --key1 123 456 --key2 789
-	if (build_config_commandline(cargo, args))
+	if (build_config_commandline(cargo, &args->ini_args))
 	{
 		return -1;
 	}
 
 	if (args->debug)
 	{
-		print_hash(args->config_args);
-		print_commandline(args);
+		print_hash(args->ini_args.config_args);
+		print_commandline(&args->ini_args);
 	}
 
 	// Parse the "fake" command line using cargo. We turn off the
 	// internal error output, so the errors are more in the context
 	// of a config file.
 	if ((err = cargo_parse(cargo, CARGO_NOERR_OUTPUT,
-							0, args->config_argc, args->config_argv)))
+							0, args->ini_args.config_argc,
+							args->ini_args.config_argv)))
 	{
 		size_t k = 0;
 
@@ -428,7 +447,7 @@ int main(int argc, char **argv)
 
 fail:
 	cargo_destroy(&cargo);
-	args_destroy(&args);
+	ini_args_destroy(&args.ini_args);
 
 	return 0;
 }
