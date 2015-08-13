@@ -21,8 +21,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 //
-#include "alini/alini.h"
-#include "cargo/cargo.h"
+#include "alini.h"
+#include "cargo.h"
 #include "uthash.h"
 
 #define MAX_CONFIG_KEY 1024
